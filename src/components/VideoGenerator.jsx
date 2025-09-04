@@ -1,57 +1,61 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
-import { Play, Wand2, Clock, Download } from 'lucide-react'
+import { Play, Wand2, Clock, Download, X, AlertCircle, CreditCard } from 'lucide-react'
 import VideoGeneratorForm from './VideoGeneratorForm'
 import TemplateSelector from './TemplateSelector'
+import { useVideoGeneration } from '../hooks/useVideoGeneration'
 
 function VideoGenerator() {
-  const { state, dispatch } = useApp()
+  const { state } = useApp()
   const [currentStep, setCurrentStep] = useState('prompt')
   const [videoConfig, setVideoConfig] = useState({
     prompt: '',
     style: '',
     duration: 30,
+    aspectRatio: '16:9',
     template: null
   })
-  const [isGenerating, setIsGenerating] = useState(false)
   const [generatedVideo, setGeneratedVideo] = useState(null)
+  const [showLimitWarning, setShowLimitWarning] = useState(false)
+
+  const {
+    isGenerating,
+    progress,
+    currentStep: generationStep,
+    error,
+    generateVideo,
+    cancelGeneration,
+    canGenerateVideo,
+    estimateCost
+  } = useVideoGeneration()
+
+  // Check generation limits on component mount
+  useEffect(() => {
+    const limits = canGenerateVideo()
+    if (!limits.canGenerate && limits.remaining === 0) {
+      setShowLimitWarning(true)
+    }
+  }, [canGenerateVideo])
 
   const handleGenerate = async () => {
-    setIsGenerating(true)
-    
-    // Simulate video generation
-    const newProject = {
-      projectId: `proj-${Date.now()}`,
-      userId: state.user.userId,
-      projectName: videoConfig.prompt.slice(0, 30) + '...',
-      videoConfig,
-      createdAt: new Date()
+    // Check if user can generate videos
+    const limits = canGenerateVideo()
+    if (!limits.canGenerate) {
+      setShowLimitWarning(true)
+      return
     }
+
+    const result = await generateVideo(videoConfig)
     
-    const newVideo = {
-      videoId: `vid-${Date.now()}`,
-      projectId: newProject.projectId,
-      generationStatus: 'processing',
-      videoUrl: null,
-      thumbnailUrl: null,
-      createdAt: new Date()
+    if (result.success) {
+      setGeneratedVideo(result.video)
     }
-    
-    dispatch({ type: 'ADD_PROJECT', payload: newProject })
-    dispatch({ type: 'ADD_VIDEO', payload: newVideo })
-    
-    // Simulate generation time
-    setTimeout(() => {
-      const completedVideo = {
-        ...newVideo,
-        generationStatus: 'completed',
-        videoUrl: '/sample-video.mp4',
-        thumbnailUrl: '/sample-thumb.jpg'
-      }
-      dispatch({ type: 'UPDATE_VIDEO_STATUS', payload: completedVideo })
-      setGeneratedVideo(completedVideo)
-      setIsGenerating(false)
-    }, 3000)
+  }
+
+  const handleCancel = async () => {
+    if (generatedVideo?.jobId) {
+      await cancelGeneration(generatedVideo.jobId)
+    }
   }
 
   const steps = [
@@ -61,6 +65,8 @@ function VideoGenerator() {
   ]
 
   const currentStepIndex = steps.findIndex(step => step.id === currentStep)
+  const limits = canGenerateVideo()
+  const estimatedCost = estimateCost(videoConfig.duration)
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -69,7 +75,76 @@ function VideoGenerator() {
           <h1 className="text-3xl font-bold text-dark-text">Create Video</h1>
           <p className="text-dark-text-muted mt-1">Generate professional videos with AI in minutes</p>
         </div>
+        <div className="text-right">
+          <div className="text-sm text-dark-text-muted">
+            {limits.remaining === -1 ? (
+              <span className="text-green-400">Unlimited videos</span>
+            ) : (
+              <span>
+                {limits.remaining} of {limits.limit} videos remaining this month
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-dark-text-muted mt-1">
+            Estimated cost: {estimatedCost} credits
+          </div>
+        </div>
       </div>
+
+      {/* Limit Warning Modal */}
+      {showLimitWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-dark-surface border border-dark-border rounded-lg p-6 max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <AlertCircle className="w-6 h-6 text-yellow-400" />
+                <h3 className="text-lg font-semibold text-dark-text">Generation Limit Reached</h3>
+              </div>
+              <button
+                onClick={() => setShowLimitWarning(false)}
+                className="text-dark-text-muted hover:text-dark-text"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-dark-text-muted mb-6">
+              You've reached your monthly video generation limit. Upgrade your plan to continue creating videos.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowLimitWarning(false)}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowLimitWarning(false)
+                  // Navigate to pricing page
+                  window.location.href = '/pricing'
+                }}
+                className="btn-primary flex-1 inline-flex items-center justify-center space-x-2"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>Upgrade Plan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-4">
+          <div className="flex items-center space-x-3">
+            <AlertCircle className="w-5 h-5 text-red-400" />
+            <div>
+              <h3 className="font-medium text-red-400">Generation Failed</h3>
+              <p className="text-sm text-red-300 mt-1">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Progress Steps */}
       <div className="flex items-center space-x-4 mb-8">
@@ -139,7 +214,10 @@ function VideoGenerator() {
                   </button>
                   <button
                     onClick={handleGenerate}
-                    className="btn-primary inline-flex items-center space-x-2"
+                    disabled={!limits.canGenerate}
+                    className={`btn-primary inline-flex items-center space-x-2 ${
+                      !limits.canGenerate ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <Wand2 className="w-4 h-4" />
                     <span>Generate Video</span>
@@ -151,11 +229,24 @@ function VideoGenerator() {
                 <div className="space-y-4">
                   <div className="inline-flex items-center space-x-2 text-primary">
                     <Clock className="w-5 h-5 animate-spin" />
-                    <span>Generating your video...</span>
+                    <span>{generationStep || 'Generating your video...'}</span>
                   </div>
                   <div className="w-full bg-dark-bg rounded-full h-2">
-                    <div className="bg-primary h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                    <div 
+                      className="bg-primary h-2 rounded-full transition-all duration-500" 
+                      style={{width: `${progress}%`}}
+                    ></div>
                   </div>
+                  <div className="text-sm text-dark-text-muted text-center">
+                    {progress}% complete
+                  </div>
+                  <button
+                    onClick={handleCancel}
+                    className="btn-secondary text-sm"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel Generation
+                  </button>
                 </div>
               )}
               
