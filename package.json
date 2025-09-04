@@ -13,7 +13,12 @@
     "react-dom": "^18.2.0",
     "lucide-react": "^0.263.1",
     "recharts": "^2.8.0",
-    "openai": "^4.20.0"
+    "openai": "^4.20.0",
+    "@stripe/stripe-js": "^2.1.0",
+    "react-router-dom": "^6.15.0",
+    "react-hot-toast": "^2.4.1",
+    "framer-motion": "^10.16.0",
+    "date-fns": "^2.30.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
